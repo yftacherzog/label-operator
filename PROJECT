@@ -1,0 +1,15 @@
+domain: yherzog.il
+layout:
+- go.kubebuilder.io/v3
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+projectName: label-operator
+repo: github.com/yftacherzog/label-operator
+resources:
+- controller: true
+  domain: yherzog.il
+  group: tekton
+  kind: PipelineRun
+  version: v1beta1
+version: "3"
