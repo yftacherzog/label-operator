@@ -24,12 +24,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
 	addRunNameLabelAnnotation = "yherzog.il/add-run-name-label"
 	runNameLabel              = "yherzog.il/run-name"
+	finalizerName             = "yherzog.il/my-finalizer"
 )
 
 // PipelineRunReconciler reconciles a PipelineRun object
@@ -60,16 +62,35 @@ func (r *PipelineRunReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	err := r.Get(ctx, req.NamespacedName, pipelineRun)
 	if err != nil {
 		logger.Error(err, "Failed to get pipelineRun for", "req", req.NamespacedName)
-		if errors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
-
-		return ctrl.Result{}, err
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	// add or remove the label
 	labelShouldBePresent := pipelineRun.Annotations[addRunNameLabelAnnotation] == "true"
 	labelIsPresent := pipelineRun.Labels[runNameLabel] == pipelineRun.Name
+
+	if pipelineRun.ObjectMeta.DeletionTimestamp.IsZero() {
+		if !controllerutil.ContainsFinalizer(pipelineRun, finalizerName) {
+			logger.Info("Adding finalizer")
+			controllerutil.AddFinalizer(pipelineRun, finalizerName)
+			if err := r.Update(ctx, pipelineRun); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	} else {
+		// the object is being deleted
+		if controllerutil.ContainsFinalizer(pipelineRun, finalizerName) {
+			logger.Info("Deleting finalizer")
+			// remove our finalizer from the list and update it.
+			controllerutil.RemoveFinalizer(pipelineRun, finalizerName)
+			if err := r.Update(ctx, pipelineRun); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
+		// Stop reconciliation as the item is being deleted
+		return ctrl.Result{}, nil
+	}
 
 	if labelShouldBePresent == labelIsPresent {
 		// The desired state and actual state of the Run are the same.
